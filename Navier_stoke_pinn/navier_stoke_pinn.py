@@ -32,7 +32,8 @@ print(torch.version.cuda)
 print(torch.backends.cudnn.version())
 
 #data prep
-data = scipy.io.loadmat('../../dataset/cylinder_nektar_wake.mat')
+#data = scipy.io.loadmat('../../dataset/cylinder_nektar_wake.mat')
+data = scipy.io.loadmat(r'C:\Users\88691\OneDrive\dataset\cylinder_nektar_wake.mat')
 
 
 U_star = data['U_star'] # N x 2 x T
@@ -74,6 +75,9 @@ t_train = t[index,:]
 u_train = u[index,:]
 v_train = v[index,:]
 
+X =np.concatenate([x_train,y_train,t_train],1)
+X.shape
+
 class PINN(nn.Module):
 
     def __init__(self,x,y,t,u,v,layers):
@@ -82,15 +86,22 @@ class PINN(nn.Module):
         self.activation = nn.Tanh()
         self.loss_function = nn.MSELoss(reduction = 'mean')
 
-        self.lambda_1 = torch.tensor([0.0],dtype=torch.float64)
-        self.lambda_2 = torch.tensor([0.0],dtype=torch.float64)
+        self.lambda_1 = torch.randn(1,requires_grad=True,device=device)
+        self.lambda_2 = torch.randn(1,requires_grad=True,device=device)
+        self.x = x
+        self.y = y
+        self.t = t
+        self.u = u
+        self.v = v
 
-        self.X = np.concatenate([x,y,t],1)
-        self.lb = self.X.min(0)
-        self.ub = self.X.max(0)
+        X = np.concatenate([x,y,t],1)
+        self.X = torch.from_numpy(X).float().to(device)
+        self.lb = X.min(0)
+        self.ub = X.max(0)
 
        
-        self.Y = np.concatenate([u,v],1)
+        Y = np.concatenate([u,v],1)
+        self.Y = torch.from_numpy(Y).float().to(device)
         
 
         self.linears =nn.ModuleList([nn.Linear(layers[i],layers[i+1]) for i in range(len(layers)-1)])
@@ -112,7 +123,7 @@ class PINN(nn.Module):
         x = (x-l_b)/(u_b-l_b)
 
         #convert to float
-        a = x.float
+        a = x.float()
 
         for i in range(len(layers)-2):
             z = self.linears[i](a)
@@ -126,15 +137,17 @@ class PINN(nn.Module):
 
         loss_u = self.loss_function(self.forward(self.X),self.Y)
 
-        return(loss_u)
+        return loss_u
 
     def loss_PDE(self):
 
         lambda_1 = self.lambda_1
         lambda_2 = self.lambda_2
 
+        XX = self.X.clone()
+        XX.requires_grad = True
        
-        psi_and_p = self.forward(self.X)
+        psi_and_p = self.forward(XX)
         psi = psi_and_p[:,0,None]
         p = psi_and_p[:,1,None]
 
@@ -158,15 +171,17 @@ class PINN(nn.Module):
 
         f_u = u_t + lambda_1*(u*u_x+v*u_y)+p_x-lambda_2*(u_xx+u_yy)
         f_v = v_t + lambda_1*(u*v_x+v*v_y)+p_y-lambda_2*(v_xx+v_yy)
+        f_u_hat = np.zeros_like(f_u)
+        f_v_hat = np.zeros_like(f_v)
 
-        loss_PDE = f_u + f_v
+        loss_PDE = self.loss_function(f_u,f_u_hat) + self.loss_function(f_v_hat)
 
         return loss_PDE
 
     def loss(self):
 
-        loss_predict = self.loss_prediction(X,Y)
-        loss_PDE = self.loss_PDE(x,y,t)
+        loss_predict = self.loss_prediction()
+        loss_PDE = self.loss_PDE()
 
         loss_val = loss_predict + loss_PDE
 
@@ -179,9 +194,10 @@ model.to(device)
 
 print(model)
 
+
 #optimizer
 optimizer = torch.optim.Adam(params=model.parameters(), lr=0.000001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-
+lr = 0.000001
 max_iter = 2000
 start_time = time.time()
 x_axis = []
@@ -191,12 +207,14 @@ for i in range(max_iter):
 
     x_axis.append(i)
 
-    Loss = PINN.loss()
+    Loss = model.loss()
+    optimizer.zero_grad()
     Loss.backward()
     optimizer.step()
 
     y_axis.append(Loss.cpu().detach().numpy())
-
+     
+print(model.lambda_1,model.lambda_2)
 
 plt.plot(x_axis,y_axis,'r-.^',label='train')
 plt.show()
