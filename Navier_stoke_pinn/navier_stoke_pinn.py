@@ -3,7 +3,7 @@ import torch
 import torch.autograd as autograd
 import torch.nn as nn
 import torch.optim as optim
-from torch import Tensor
+from torch import Tensor, dtype
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -75,8 +75,7 @@ t_train = t[index,:]
 u_train = u[index,:]
 v_train = v[index,:]
 
-X =np.concatenate([x_train,y_train,t_train],1)
-X.shape
+
 
 class PINN(nn.Module):
 
@@ -85,14 +84,14 @@ class PINN(nn.Module):
 
         self.activation = nn.Tanh()
         self.loss_function = nn.MSELoss(reduction = 'mean')
-
+        self.p = torch.randn(1,requires_grad=True,device=device)
         self.lambda_1 = torch.randn(1,requires_grad=True,device=device)
         self.lambda_2 = torch.randn(1,requires_grad=True,device=device)
         self.x = x
         self.y = y
         self.t = t
-        self.u = u
-        self.v = v
+        self.u = torch.from_numpy(u).requires_grad_()
+        self.v = torch.from_numpy(v).requires_grad_()
 
         X = np.concatenate([x,y,t],1)
         self.X = torch.from_numpy(X).float().to(device)
@@ -114,7 +113,7 @@ class PINN(nn.Module):
     def forward(self,x):
 
         if torch.is_tensor(x) != True:
-            x = torch.from_numpy(x)
+            x = torch.from_numpy(x).float().to(device)
 
         u_b = torch.from_numpy(self.ub).float().to(device)
         l_b = torch.from_numpy(self.lb).float().to(device)
@@ -139,49 +138,55 @@ class PINN(nn.Module):
 
         return loss_u
 
-    def loss_PDE(self):
+    def loss_PDE(self,x,y,t):
 
-        lambda_1 = self.lambda_1
-        lambda_2 = self.lambda_2
+        if torch.is_tensor(x) != True:
+            x = torch.from_numpy(x).float().to(device)
+        if torch.is_tensor(y) != True:
+            y = torch.from_numpy(y).float().to(device)
+        if torch.is_tensor(t) != True:
+            t = torch.from_numpy(t).float().to(device)
 
-        XX = self.X.clone()
-        XX.requires_grad = True
-       
-        psi_and_p = self.forward(XX)
+        x.requires_grad = True
+        y.requires_grad = True
+        t.requires_grad = True 
+
+        psi_and_p = self.forward(torch.cat([x,y,t],1))
         psi = psi_and_p[:,0,None]
         p = psi_and_p[:,1,None]
 
-        u = autograd.grad(psi,self.y,outputs = torch.ones_like(psi).to(device),create_graph=True)[0]
-        v = autograd.grad(psi,self.x,outputs = torch.ones_like(psi).to(device),create_graph=True)[0]
+        u = autograd.grad(psi,x,grad_outputs = torch.ones_like(psi).to(device),create_graph=True)[0]
+        v = autograd.grad(psi,x,grad_outputs = torch.ones_like(psi).to(device),create_graph=True)[0]
 
-        u_t = autograd.grad(u,self.t,outputs = torch.ones_like(u).to(device),create_graph=True)[0]
-        u_x = autograd.grad(u,self.x,outputs = torch.ones_like(u).to(device),create_graph=True)[0]
-        u_y = autograd.grad(u,self.y,outputs = torch.ones_like(u).to(device),create_graph=True)[0]
-        u_xx = autograd.grad(u_x,self.x,outputs = torch.ones_like(u_x).to(device),create_graph=True)[0]
-        u_yy = autograd.grad(u_y,self.y,outputs = torch.ones_like(u_x).to(device),create_graph=True)[0]
+        u_t = autograd.grad(u,t,grad_outputs = torch.ones_like(u).to(device),create_graph=True)[0]
+        u_x = autograd.grad(u,x,grad_outputs = torch.ones_like(u).to(device),create_graph=True)[0]
+        u_y = autograd.grad(u,y,grad_outputs = torch.ones_like(u).to(device),create_graph=True)[0]
+        u_xx = autograd.grad(u_x,x,grad_outputs = torch.ones_like(u_x).to(device),create_graph=True)[0]
+        u_yy = autograd.grad(u_y,y,grad_outputs = torch.ones_like(u_x).to(device),create_graph=True)[0]
 
-        v_t = autograd.grad(v,self.t,outputs = torch.ones_like(v).to(device),create_graph=True)[0]
-        v_x = autograd.grad(v,self.x,outputs = torch.ones_like(v).to(device),create_graph=True)[0]
-        v_y = autograd.grad(v,self.y,outputs = torch.ones_like(v).to(device),create_graph=True)[0]
-        v_xx = autograd.grad(v_x,self.x,outputs = torch.ones_like(v_x).to(device),create_graph=True)[0]
-        v_yy = autograd.grad(v_y,self.y,outputs = torch.ones_like(v_y).to(device),create_graph=True)[0]
+        v_t = autograd.grad(v,t,grad_outputs = torch.ones_like(v).to(device),create_graph=True)[0]
+        v_x = autograd.grad(v,x,grad_outputs = torch.ones_like(v).to(device),create_graph=True)[0]
+        v_y = autograd.grad(v,y,grad_outputs = torch.ones_like(v).to(device),create_graph=True)[0]
+        v_xx = autograd.grad(v_x,x,grad_outputs = torch.ones_like(v_x).to(device),create_graph=True)[0]
+        v_yy = autograd.grad(v_y,y,grad_outputs = torch.ones_like(v_y).to(device),create_graph=True)[0]
 
-        p_x = autograd.grad(p,self.x,outputs = torch.ones_like(p).to(device),create_graph=True)[0]
-        p_y = autograd.grad(p,self.y,outputs = torch.ones_like(p).to(device),create_graph=True)[0]
+        p_x = autograd.grad(p,x,grad_outputs = torch.ones_like(p).to(device),create_graph=True)[0]
+        p_y = autograd.grad(p,y,grad_outputs = torch.ones_like(p).to(device),create_graph=True)[0]
 
-        f_u = u_t + lambda_1*(u*u_x+v*u_y)+p_x-lambda_2*(u_xx+u_yy)
-        f_v = v_t + lambda_1*(u*v_x+v*v_y)+p_y-lambda_2*(v_xx+v_yy)
-        f_u_hat = np.zeros_like(f_u)
-        f_v_hat = np.zeros_like(f_v)
+        f_u = u_t + self.lambda_1*(u*u_x+v*u_y)+p_x-self.lambda_2*(u_xx+u_yy)
+        f_v = v_t + self.lambda_1*(u*v_x+v*v_y)+p_y-self.lambda_2*(v_xx+v_yy)
 
-        loss_PDE = self.loss_function(f_u,f_u_hat) + self.loss_function(f_v_hat)
+        f_u_hat = torch.zeros_like(f_u)
+        f_v_hat = torch.zeros_like(f_v)
 
-        return loss_PDE
+        loss_PDE = self.loss_function(f_u,f_u_hat) + self.loss_function(f_v,f_v_hat)
 
-    def loss(self):
+        return loss_PDE,p
+
+    def loss(self,x,y,t):
 
         loss_predict = self.loss_prediction()
-        loss_PDE = self.loss_PDE()
+        loss_PDE,_,_ = self.loss_PDE(x,y,t)
 
         loss_val = loss_predict + loss_PDE
 
@@ -196,9 +201,9 @@ print(model)
 
 
 #optimizer
-optimizer = torch.optim.Adam(params=model.parameters(), lr=0.000001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-lr = 0.000001
-max_iter = 2000
+optimizer = torch.optim.Adam(params= model.parameters(), lr=0.000001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+
+max_iter = 20000
 start_time = time.time()
 x_axis = []
 y_axis = []
@@ -207,10 +212,15 @@ for i in range(max_iter):
 
     x_axis.append(i)
 
-    Loss = model.loss()
+    Loss = model.loss(x_train,y_train,t_train)
     optimizer.zero_grad()
     Loss.backward()
     optimizer.step()
+    
+    if i % (max_iter/10) == 0:
+
+        print('lambda1:{:.6f}\tlambda2:{:.6f}'.format(model.lambda_1.item(),model.lambda_2.item()))
+        print('Loss:{:.6f}'.format(Loss))
 
     y_axis.append(Loss.cpu().detach().numpy())
      
