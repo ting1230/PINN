@@ -95,7 +95,9 @@ class PINNmodel(nn.Module):
         c = self.forward(x)
         ci = 3
         k = 
-        tau = 0.2966
+        volume_velocity = 0.2966
+        reactor_volume = 18.764
+        tau = 18.764/0.2966
         
         c_t = autograd.grad(c,x,grad_outputs = torch.ones_like(c).to(device),retain_graph=True,create_graph=True)[0]
         
@@ -114,11 +116,27 @@ class PINNmodel(nn.Module):
         loss_total = loss_u + loss_f
         
         return loss_total
+
+    def test(self):
+
+        c_pred = self.forward(x_test)
+
+        #Relative L2 Norm of the error(vector)
+        error_vec = torch.linalg.norm((y_test-c_pred),2)/torch.linalg.norm(u,2)
+
+        return c_pred,error_vec
         
             
             
             
-            
+#Covert to tensor and send to GPU
+x_train = torch.from_numpy(input_train).float().to(device)
+x_validation = torch.from_numpy(input_validation).float().to(device)
+x_test = torch.from_numpy(input_test).float().to(device)
+y_train = torch.from_numpy(output_train).float().to(device)
+y_validation = torch.from_numpy(output_validation).float().to(device)
+y_test = torch.from_numpy(output_test).float().to(device)
+
 
 
 
@@ -136,4 +154,12 @@ start_time = time.time()
 
 for i in range(max_iter):
     
-    
+    Loss = PINN.loss(x_train,y_train)
+    optimizer.zero_grad()
+    Loss.backward()
+    optimizer.step()
+
+    if i % (max_iter/10) == 0:
+        c_pred,error_vec = PINN.test()
+        print('epoch:',i)
+        print('Loss:',Loss,'\nerror_vec:',error_vec)
