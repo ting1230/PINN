@@ -36,8 +36,8 @@ print(torch.backends.cudnn.version())
 #data prep
 data_source = pd.read_csv(r'G:\我的雲端硬碟\預口試\Data\0.1_1500_0\0.1_1500_0.csv')
 
-data_input = data_source['Time'].to_numpy()
-data_output = data_source['concentration'].to_numpy()
+data_input = data_source['Time'].to_numpy().reshape(1501,-1)
+data_output = data_source['concentration'].to_numpy().reshape(1501,-1)
 
 #data split
 
@@ -53,10 +53,10 @@ class PINNmodel(nn.Module):
         super().__init__()
         
         self.activation = nn.Tanh()
-        self.loss_function = nn.MSELoss
+        self.loss_function = nn.MSELoss()
         
         #Initialise neural network as a list using nn.Nodulelist
-        self.linears = nn.ModuleList([nn.Linear(layers[i],layers[i+1])] for i in range(len(layers)-1))
+        self.linears = nn.ModuleList([nn.Linear(layers[i],layers[i+1]) for i in range(len(layers)-1)])
         
         self.iter = 0
         
@@ -67,7 +67,7 @@ class PINNmodel(nn.Module):
             #set biases to zero
             nn.init.zeros_(self.linears[i].bias.data)
             
-    def forward(self.x):
+    def forward(self,x):
         
         if torch.is_tensor(x) != True:
             x = torch.from_numpy(x)
@@ -87,19 +87,21 @@ class PINNmodel(nn.Module):
         
         loss_u = self.loss_function(self.forward(x),y)
         
-        return(loss_u)
+        return loss_u
     
     def loss_PDE(self,x):
         
-        
-        c = self.forward(x)
+        g = x.clone()
+        g.requires_grad = True
+
+        c = self.forward(g)
         ci = 3
-        k = 
+        k = 6.4283*10**-3
         volume_velocity = 0.2966
         reactor_volume = 18.764
-        tau = 18.764/0.2966
+        tau = reactor_volume/volume_velocity
         
-        c_t = autograd.grad(c,x,grad_outputs = torch.ones_like(c).to(device),retain_graph=True,create_graph=True)[0]
+        c_t = autograd.grad(c,g,grad_outputs = torch.ones_like(c).to(device),retain_graph=True,create_graph=True)[0]
         
         f = c_t + (1+tau*k)*c/tau - ci/tau 
         
@@ -122,7 +124,7 @@ class PINNmodel(nn.Module):
         c_pred = self.forward(x_test)
 
         #Relative L2 Norm of the error(vector)
-        error_vec = torch.linalg.norm((y_test-c_pred),2)/torch.linalg.norm(u,2)
+        error_vec = torch.linalg.norm((y_test-c_pred),2)/torch.linalg.norm(y_test,2)
 
         return c_pred,error_vec
         
@@ -137,7 +139,8 @@ y_train = torch.from_numpy(output_train).float().to(device)
 y_validation = torch.from_numpy(output_validation).float().to(device)
 y_test = torch.from_numpy(output_test).float().to(device)
 
-
+x_train.shape
+y_train.shape
 
 
 layers = np.array([1,20,20,20,20,20,20,20,20,1]) #8 hidden layers
@@ -147,9 +150,9 @@ PINN.to(device)
 
 
 #optimizer
-optimizer = torch.optim.Adam(params=PINN.parameters(), lr=0.000001, betas=(0.9,0.999), eps=1e-0.8, weight_decay=0, amsgrad=False)
+optimizer = torch.optim.Adam(params=PINN.parameters(), lr=0.000001, betas=(0.9,0.999), eps=1e-08, weight_decay=0, amsgrad=False)
 
-max_iter = 2000
+max_iter = 20000
 start_time = time.time()
 
 for i in range(max_iter):
