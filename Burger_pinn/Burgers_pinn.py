@@ -150,7 +150,7 @@ class Sequentialmodel(nn.Module):
 
         loss_u = self.loss_function(self.forward(x),y)
         
-        return(loss_u)
+        return loss_u
 
     def loss_PDE(self,x_to_train_f):
         
