@@ -97,7 +97,7 @@ class PINNmodel(nn.Module):
         c = self.forward(g)
         ci = 3
         k = 6.4283*10**-3
-        volume_velocity = 0.2966
+        volume_velocity = 0.4943
         reactor_volume = 18.764
         tau = reactor_volume/volume_velocity
         
@@ -152,17 +152,38 @@ PINN.to(device)
 #optimizer
 optimizer = torch.optim.Adam(params=PINN.parameters(), lr=0.000001, betas=(0.9,0.999), eps=1e-08, weight_decay=0, amsgrad=False)
 
-max_iter = 20000
+max_iter = 100000
 start_time = time.time()
+x_axis = []
+y_axis_train_Loss = []
+y_axis_train_error = []
 
 for i in range(max_iter):
+
+    x_axis.append(i)
     
     Loss = PINN.loss(x_train,y_train)
     optimizer.zero_grad()
     Loss.backward()
     optimizer.step()
 
+    y_axis_train_Loss.append(Loss.cpu().detach().numpy())
+
+    c_pred,error_vec = PINN.test()
+
     if i % (max_iter/10) == 0:
-        c_pred,error_vec = PINN.test()
+        
         print('epoch:',i)
         print('Loss:',Loss,'\nerror_vec:',error_vec)
+        
+    y_axis_train_error.append(error_vec.cpu().detach().numpy())
+    
+
+plt.plot(x_axis,y_axis_train_Loss,'r-.^',label='train')
+plt.plot(x_axis,y_axis_train_error,'y-.^',label='test')
+plt.show()
+
+
+plt.plot(np.sort(x_test.cpu().detach().numpy(),axis=None),np.sort(c_pred.cpu().detach().numpy(),axis=None),'r--',linewidth = 2,label='prediction')
+plt.plot(data_input,data_output,'y--',linewidth = 2, label='Exact')
+plt.show()
