@@ -34,7 +34,7 @@ print(torch.version.cuda)
 print(torch.backends.cudnn.version())
 
 #data prep
-data_source = pd.read_csv(r'G:\我的雲端硬碟\預口試\Data\0.1_1500_0\0.1_1500_0.csv')
+data_source = pd.read_csv(r'G:\我的雲端硬碟\預口試\Data\only_t_input\3_0.5_300_0\0.1_1500_0.csv')
 
 data_input = data_source['Time'].to_numpy().reshape(1501,-1)
 data_output = data_source['concentration'].to_numpy().reshape(1501,-1)
@@ -117,7 +117,7 @@ class PINNmodel(nn.Module):
         
         loss_total = loss_u + loss_f
         
-        return loss_total
+        return loss_u,loss_f,loss_total
 
     def test(self):
 
@@ -155,35 +155,45 @@ optimizer = torch.optim.Adam(params=PINN.parameters(), lr=0.000001, betas=(0.9,0
 max_iter = 100000
 start_time = time.time()
 x_axis = []
+y_axis_train_PDELoss = []
 y_axis_train_Loss = []
-y_axis_train_error = []
+y_axis_test_error = []
 
 for i in range(max_iter):
 
     x_axis.append(i)
     
-    Loss = PINN.loss(x_train,y_train)
+    Loos_u,Loss_f,Loss_total = PINN.loss(x_train,y_train)
     optimizer.zero_grad()
-    Loss.backward()
+    Loss_total.backward()
     optimizer.step()
 
-    y_axis_train_Loss.append(Loss.cpu().detach().numpy())
+    y_axis_train_Loss.append(Loss_total.cpu().detach().numpy())
+    y_axis_train_PDELoss.append(Loss_f.cpu().detach().numpy())
 
     c_pred,error_vec = PINN.test()
 
     if i % (max_iter/10) == 0:
         
         print('epoch:',i)
-        print('Loss:',Loss,'\nerror_vec:',error_vec)
+        print('Loss:',Loss_total,'\nerror_vec:',error_vec)
+        print(Loss_f)
         
-    y_axis_train_error.append(error_vec.cpu().detach().numpy())
+    y_axis_test_error.append(error_vec.cpu().detach().numpy())
     
 
-plt.plot(x_axis,y_axis_train_Loss,'r-.^',label='train')
-plt.plot(x_axis,y_axis_train_error,'y-.^',label='test')
+plt.plot(x_axis,y_axis_train_Loss,'r-.^',linewidth = 2,label='total_loss')
+plt.plot(x_axis,y_axis_test_error,'y-.^',linewidth = 2,label='test')
+plt.plot(x_axis,y_axis_train_PDELoss,'b-.^',linewidth = 2,label='PDE_loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend()
 plt.show()
 
 
 plt.plot(np.sort(x_test.cpu().detach().numpy(),axis=None),np.sort(c_pred.cpu().detach().numpy(),axis=None),'r--',linewidth = 2,label='prediction')
 plt.plot(data_input,data_output,'y--',linewidth = 2, label='Exact')
+plt.ylabel('outlet concnetration of species A')
+plt.xlabel('time(s)')
+plt.legend()
 plt.show()
