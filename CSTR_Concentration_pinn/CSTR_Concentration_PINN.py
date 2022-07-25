@@ -34,17 +34,32 @@ print(torch.version.cuda)
 print(torch.backends.cudnn.version())
 
 #data prep
-data_source = pd.read_csv(r'G:\我的雲端硬碟\預口試\Data\only_t_input\3_0.5_300_0\0.1_1500_0.csv')
+data_source = pd.read_csv(r'G:\我的雲端硬碟\預口試\Data\process&t_input\initial_concentration_0\1.csv')
 
-data_input = data_source['Time'].to_numpy().reshape(1501,-1)
+data_input = data_source['time'].to_numpy().reshape(1501,-1)
 data_output = data_source['concentration'].to_numpy().reshape(1501,-1)
 
 #data split
 
-input_train_val,input_test,output_train_val,output_test = train_test_split(data_input,data_output,test_size=0.2,random_state=seed_number)
+input_train,input_test,output_train,output_test = train_test_split(data_input,data_output,test_size=0.2,random_state=seed_number)
 
-input_train,input_validation,output_train,output_validation = train_test_split(input_train_val,output_train_val,test_size=0.2,random_state=seed_number)
 
+
+
+#Collocation points
+lb = data_input.min(0)
+ub = data_input.max(0)
+
+
+
+def Collocation(N_f):
+    
+    Collocation_point = lb + (ub-lb)*lhs(len(lb),N_f)
+    Collocation_point = np.vstack((Collocation_point,input_train))
+    
+    return Collocation_point
+
+Collocation(10000)
 
 #Physics Informed Neural Network
 class PINNmodel(nn.Module):
@@ -110,10 +125,10 @@ class PINNmodel(nn.Module):
         
         return loss_f
     
-    def loss(self,x,y):
+    def loss(self,x,y,Collocation):
         
         loss_u = self.loss_data(x,y)
-        loss_f = self.loss_PDE(x)
+        loss_f = self.loss_PDE(Collocation)
         
         loss_total = loss_u + loss_f
         
@@ -132,12 +147,14 @@ class PINNmodel(nn.Module):
             
             
 #Covert to tensor and send to GPU
+
+number_collocation = 10000
+
 x_train = torch.from_numpy(input_train).float().to(device)
-x_validation = torch.from_numpy(input_validation).float().to(device)
 x_test = torch.from_numpy(input_test).float().to(device)
 y_train = torch.from_numpy(output_train).float().to(device)
-y_validation = torch.from_numpy(output_validation).float().to(device)
 y_test = torch.from_numpy(output_test).float().to(device)
+Collocation_train = torch.from_numpy(Collocation(number_collocation)).float().to(device)
 
 x_train.shape
 y_train.shape
@@ -163,7 +180,7 @@ for i in range(max_iter):
 
     x_axis.append(i)
     
-    Loos_u,Loss_f,Loss_total = PINN.loss(x_train,y_train)
+    Loos_u,Loss_f,Loss_total = PINN.loss(x_train,y_train,Collocation_train)
     optimizer.zero_grad()
     Loss_total.backward()
     optimizer.step()
